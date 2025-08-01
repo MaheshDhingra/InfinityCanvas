@@ -10,10 +10,13 @@ let lines = [];
 
 // Load existing lines from file
 try {
+  console.log(`Checking for data file at: ${DATA_FILE}`);
   if (fs.existsSync(DATA_FILE)) {
     const data = fs.readFileSync(DATA_FILE, 'utf8');
     lines = JSON.parse(data);
     console.log(`Loaded ${lines.length} lines from ${DATA_FILE}`);
+  } else {
+    console.log('Data file does not exist. Starting with empty canvas.');
   }
 } catch (error) {
   console.error('Error loading data file:', error);
@@ -23,8 +26,15 @@ try {
 const saveLines = () => {
   // Ensure the directory exists before writing the file
   const dir = path.dirname(DATA_FILE);
+  console.log(`Ensuring directory exists: ${dir}`);
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log(`Directory created: ${dir}`);
+    } catch (mkdirError) {
+      console.error('Error creating directory:', mkdirError);
+      return; // Stop if directory creation fails
+    }
   }
 
   fs.writeFile(DATA_FILE, JSON.stringify(lines, null, 2), 'utf8', (err) => {
