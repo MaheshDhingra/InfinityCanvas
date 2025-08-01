@@ -206,15 +206,15 @@ const InfiniteCanvas: React.FC = () => {
         gap: '10px',
         alignItems: 'center'
       }}>
-        <label htmlFor="colorPicker">Color:</label>
+        <label htmlFor="colorPicker" style={{color: '#000000'}}>Color:</label>
         <input
           type="color"
           id="colorPicker"
           value={currentColor}
           onChange={(e) => setCurrentColor(e.target.value)}
-          style={{ width: '40px', height: '25px', border: 'none', padding: 0 }}
+          style={{ width: '40px', height: '25px', border: 'none', padding: 0}}
         />
-        <label htmlFor="strokeWidth">Stroke:</label>
+        <label htmlFor="strokeWidth" style={{color: '#000000'}}>Stroke:</label>
         <input
           type="range"
           id="strokeWidth"
@@ -224,7 +224,7 @@ const InfiniteCanvas: React.FC = () => {
           onChange={(e) => setCurrentStrokeWidth(parseInt(e.target.value))}
           style={{ width: '100px' }}
         />
-        <span>{currentStrokeWidth}px</span>
+        <span style={{color: '#000000'}}>{currentStrokeWidth}px</span>
       </div>
       <canvas
         ref={canvasRef}

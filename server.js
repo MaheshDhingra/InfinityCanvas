@@ -97,6 +97,7 @@ app.prepare().then(() => {
 
   server.on('upgrade', (request, socket, head) => {
     const { pathname } = parse(request.url);
+    console.log(`Upgrade request for pathname: ${pathname}, Request type: ${request.constructor.name}`);
 
     if (pathname === '/api/socket') {
       wss.handleUpgrade(request, socket, head, ws => {
