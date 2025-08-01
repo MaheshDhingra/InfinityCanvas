@@ -3,7 +3,7 @@ const { parse } = require('url');
 const next = require('next');
 const { WebSocketServer } = require('ws');
 const { Pool } = require('pg');
-require('dotenv').config(); // Load environment variables from .env file
+require('dotenv').config();
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -44,13 +44,13 @@ const handle = app.getRequestHandler();
 app.prepare().then(() => {
   const server = createServer((req, res) => {
     const parsedUrl = parse(req.url, true);
-    if (parsedUrl.pathname === '/api/socket' && req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
-      return;
-    }
+    // Next.js handles all requests, including the WebSocket path.
+    // The 'upgrade' event on the server will be handled by ws directly.
     handle(req, res, parsedUrl);
   });
 
-  const wss = new WebSocketServer({ noServer: true });
+  // Pass the http server directly to WebSocketServer
+  const wss = new WebSocketServer({ server });
 
   wss.on('connection', async ws => {
     console.log('Client connected to WebSocket');
@@ -95,18 +95,8 @@ app.prepare().then(() => {
     });
   });
 
-  server.on('upgrade', (request, socket, head) => {
-    const { pathname } = parse(request.url);
-    console.log(`Upgrade request for pathname: ${pathname}, Request type: ${request.constructor.name}`);
-
-    if (pathname === '/api/socket') {
-      wss.handleUpgrade(request, socket, head, ws => {
-        wss.emit('connection', ws, request);
-      });
-    } else {
-      socket.destroy();
-    }
-  });
+  // The 'upgrade' event is now handled internally by `new WebSocketServer({ server })`
+  // No need for a manual server.on('upgrade', ...) block here.
 
   server.listen(port, (err) => {
     if (err) throw err;
