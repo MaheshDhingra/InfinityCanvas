@@ -2,84 +2,82 @@ const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
 const { WebSocketServer } = require('ws');
-const fs = require('fs');
-const path = require('path');
+const { Pool } = require('pg');
+require('dotenv').config(); // Load environment variables from .env file
 
-const DATA_FILE = path.join(__dirname, 'data.json');
-let lines = [];
-
-// Load existing lines from file
-try {
-  console.log(`Checking for data file at: ${DATA_FILE}`);
-  if (fs.existsSync(DATA_FILE)) {
-    const data = fs.readFileSync(DATA_FILE, 'utf8');
-    lines = JSON.parse(data);
-    console.log(`Loaded ${lines.length} lines from ${DATA_FILE}`);
-  } else {
-    console.log('Data file does not exist. Starting with empty canvas.');
-  }
-} catch (error) {
-  console.error('Error loading data file:', error);
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error('DATABASE_URL is not set in .env file!');
+  process.exit(1); // Exit if no database URL
 }
 
-// Function to save lines to file
-const saveLines = () => {
-  // Ensure the directory exists before writing the file
-  const dir = path.dirname(DATA_FILE);
-  console.log(`Ensuring directory exists: ${dir}`);
-  if (!fs.existsSync(dir)) {
-    try {
-      fs.mkdirSync(dir, { recursive: true });
-      console.log(`Directory created: ${dir}`);
-    } catch (mkdirError) {
-      console.error('Error creating directory:', mkdirError);
-      return; // Stop if directory creation fails
-    }
-  }
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+});
 
-  fs.writeFile(DATA_FILE, JSON.stringify(lines, null, 2), 'utf8', (err) => {
-    if (err) {
-      console.error('Error saving data file:', err);
-    } else {
-      console.log('Lines saved to data.json');
-    }
-  });
-};
+// Initialize database: create table if not exists
+async function initializeDb() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS lines (
+        id SERIAL PRIMARY KEY,
+        color VARCHAR(7) NOT NULL,
+        "strokeWidth" INTEGER NOT NULL,
+        points JSONB NOT NULL
+      );
+    `);
+    console.log('Database table "lines" ensured to exist.');
+  } catch (err) {
+    console.error('Error initializing database:', err);
+  }
+}
+
+initializeDb();
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
 const port = 3000;
 
-// When using a custom server, you need to disable the built-in Next.js server
-// by setting `output: 'standalone'` in next.config.js or by not running `next dev` directly.
-// For development, we'll use `next({ dev })` to prepare the app.
 const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
   const server = createServer((req, res) => {
     const parsedUrl = parse(req.url, true);
-    // Bypass Next.js handler for WebSocket upgrade requests
     if (parsedUrl.pathname === '/api/socket' && req.headers.upgrade && req.headers.upgrade.toLowerCase() === 'websocket') {
-      return; // Let the 'upgrade' event handler take over
+      return;
     }
     handle(req, res, parsedUrl);
   });
 
   const wss = new WebSocketServer({ noServer: true });
 
-  wss.on('connection', ws => {
+  wss.on('connection', async ws => {
     console.log('Client connected to WebSocket');
 
-    // Send existing lines to the newly connected client
-    ws.send(JSON.stringify({ type: 'initial_lines', data: lines }));
+    try {
+      const result = await pool.query('SELECT color, "strokeWidth", points FROM lines ORDER BY id ASC');
+      const existingLines = result.rows;
+      ws.send(JSON.stringify({ type: 'initial_lines', data: existingLines }));
+      console.log(`Sent ${existingLines.length} initial lines to new client.`);
+    } catch (err) {
+      console.error('Error fetching initial lines from DB:', err);
+    }
 
-    ws.on('message', message => {
+    ws.on('message', async message => {
       const parsedMessage = JSON.parse(message.toString());
       if (parsedMessage.type === 'new_line') {
-        lines.push(parsedMessage.data);
-        saveLines(); // Save after adding new line
-        // Broadcast new line to all other connected clients
+        const newLine = parsedMessage.data;
+        try {
+          await pool.query(
+            'INSERT INTO lines (color, "strokeWidth", points) VALUES ($1, $2, $3)',
+            [newLine.color, newLine.strokeWidth, JSON.stringify(newLine.points)]
+          );
+          console.log('New line saved to database.');
+        } catch (err) {
+          console.error('Error saving new line to DB:', err);
+        }
+
         wss.clients.forEach(client => {
           if (client !== ws && client.readyState === ws.OPEN) {
             client.send(message.toString());
