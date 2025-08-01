@@ -89,6 +89,18 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
           Line
         </button>
         <button
+          onClick={() => setActiveTool('arrow')}
+          style={{
+            padding: '8px 12px',
+            border: '1px solid #ccc',
+            borderRadius: '4px',
+            background: activeTool === 'arrow' ? '#e0e0e0' : 'white',
+            cursor: 'pointer',
+          }}
+        >
+          Arrow
+        </button>
+        <button
           onClick={() => setActiveTool('eraser')}
           style={{
             padding: '8px 12px',
