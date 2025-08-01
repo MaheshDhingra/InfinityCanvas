@@ -49,8 +49,8 @@ app.prepare().then(() => {
     handle(req, res, parsedUrl);
   });
 
-  // Pass the http server directly to WebSocketServer
-  const wss = new WebSocketServer({ server });
+  // Create WebSocketServer without attaching to the HTTP server directly
+  const wss = new WebSocketServer({ noServer: true });
 
   wss.on('connection', async ws => {
     console.log('Client connected to WebSocket');
@@ -95,8 +95,17 @@ app.prepare().then(() => {
     });
   });
 
-  // The 'upgrade' event is now handled internally by `new WebSocketServer({ server })`
-  // No need for a manual server.on('upgrade', ...) block here.
+  server.on('upgrade', async function upgrade(request, socket, head) {
+    const { pathname } = parse(request.url);
+
+    if (pathname === '/api/socket') {
+      wss.handleUpgrade(request, socket, head, function done(ws) {
+        wss.emit('connection', ws, request);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
 
   server.listen(port, (err) => {
     if (err) throw err;
