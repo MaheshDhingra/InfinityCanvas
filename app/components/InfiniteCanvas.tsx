@@ -8,41 +8,48 @@ interface Point {
   y: number;
 }
 
-interface Line {
-  type: 'line';
-  points: Point[];
+interface BaseElement {
+  id?: number; // Optional for new elements before they get an ID from the server
+  type: string;
   color: string;
   strokeWidth: number;
 }
 
-interface Rectangle {
+interface Line extends BaseElement {
+  type: 'line';
+  points: Point[];
+}
+
+interface Rectangle extends BaseElement {
   type: 'rectangle';
   x: number;
   y: number;
   width: number;
   height: number;
-  color: string;
-  strokeWidth: number;
 }
 
-interface Circle {
+interface Circle extends BaseElement {
   type: 'circle';
   x: number;
   y: number;
   radius: number;
-  color: string;
-  strokeWidth: number;
 }
 
-interface StraightLine {
+interface StraightLine extends BaseElement {
   type: 'straight_line';
   start: Point;
   end: Point;
-  color: string;
-  strokeWidth: number;
 }
 
-type DrawingElement = Line | Rectangle | Circle | StraightLine;
+interface Diamond extends BaseElement {
+  type: 'diamond';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+type DrawingElement = Line | Rectangle | Circle | StraightLine | Diamond;
 
 const InfiniteCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -87,6 +94,20 @@ const InfiniteCanvas: React.FC = () => {
     ctx.stroke();
   }, []);
 
+  const drawDiamond = useCallback((ctx: CanvasRenderingContext2D, diamond: Diamond) => {
+    ctx.strokeStyle = diamond.color;
+    ctx.lineWidth = diamond.strokeWidth;
+    ctx.beginPath();
+    const centerX = diamond.x + diamond.width / 2;
+    const centerY = diamond.y + diamond.height / 2;
+    ctx.moveTo(centerX, diamond.y); // Top point
+    ctx.lineTo(diamond.x + diamond.width, centerY); // Right point
+    ctx.lineTo(centerX, diamond.y + diamond.height); // Bottom point
+    ctx.lineTo(diamond.x, centerY); // Left point
+    ctx.closePath();
+    ctx.stroke();
+  }, []);
+
   const drawStraightLine = useCallback((ctx: CanvasRenderingContext2D, line: StraightLine) => {
     ctx.strokeStyle = line.color;
     ctx.lineWidth = line.strokeWidth;
@@ -118,6 +139,8 @@ const InfiniteCanvas: React.FC = () => {
         drawCircle(ctx, element);
       } else if (element.type === 'straight_line') {
         drawStraightLine(ctx, element);
+      } else if (element.type === 'diamond') {
+        drawDiamond(ctx, element);
       }
     });
 
@@ -130,10 +153,12 @@ const InfiniteCanvas: React.FC = () => {
         drawCircle(ctx, currentElement);
       } else if (currentElement.type === 'straight_line') {
         drawStraightLine(ctx, currentElement);
+      } else if (currentElement.type === 'diamond') {
+        drawDiamond(ctx, currentElement);
       }
     }
     ctx.restore();
-  }, [elements, currentElement, scale, offset, drawLine, drawRectangle, drawCircle, drawStraightLine]);
+  }, [elements, currentElement, scale, offset, drawLine, drawRectangle, drawCircle, drawStraightLine, drawDiamond]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -173,7 +198,11 @@ const InfiniteCanvas: React.FC = () => {
       if (message.type === 'initial_elements') {
         setElements(message.data);
       } else if (message.type === 'new_element') {
+        console.log("Client received new_element:", message.data); // Debugging: Client received new element
         setElements(prevElements => [...prevElements, message.data]);
+      } else if (message.type === 'delete_element') {
+        console.log("Client received delete_element for ID:", message.data.id); // Debugging: Client received delete
+        setElements(prevElements => prevElements.filter(el => el.id !== message.data.id));
       }
     };
 
@@ -272,6 +301,8 @@ const InfiniteCanvas: React.FC = () => {
         setCurrentElement({ type: 'circle', x: point.x, y: point.y, radius: 0, color: currentColor, strokeWidth: currentStrokeWidth });
       } else if (activeTool === 'straight_line') {
         setCurrentElement({ type: 'straight_line', start: point, end: point, color: currentColor, strokeWidth: currentStrokeWidth });
+      } else if (activeTool === 'diamond') {
+        setCurrentElement({ type: 'diamond', x: point.x, y: point.y, width: 0, height: 0, color: currentColor, strokeWidth: currentStrokeWidth });
       }
     } else if (e.button === 1) { // Middle click for panning
       setLastMousePos({ x: e.clientX, y: e.clientY });
@@ -287,6 +318,7 @@ const InfiniteCanvas: React.FC = () => {
       if (currentElement && currentElement.type === 'line') {
         const updatedLine = { ...currentElement, points: [...currentElement.points, currentPoint] };
         setCurrentElement(updatedLine);
+        console.log("Pen tool: currentElement points count:", updatedLine.points.length); // Debugging: Log point count
       }
     } else if (activeTool === 'rectangle') {
       if (!startPoint) return;
@@ -304,35 +336,49 @@ const InfiniteCanvas: React.FC = () => {
       if (currentElement && currentElement.type === 'straight_line') {
         setCurrentElement({ ...currentElement, end: currentPoint });
       }
+    } else if (activeTool === 'diamond') {
+      if (!startPoint) return;
+      const width = currentPoint.x - startPoint.x;
+      const height = currentPoint.y - startPoint.y;
+      setCurrentElement({ type: 'diamond', x: startPoint.x, y: startPoint.y, width, height, color: currentColor, strokeWidth: currentStrokeWidth });
     }
     redrawCanvas();
   }, [isDrawing, currentElement, getTransformedPoint, startPoint, activeTool, currentColor, currentStrokeWidth, redrawCanvas]);
 
   const endDrawingOrPanning = useCallback(() => {
     if (isDrawing && currentElement) {
-      setElements(prevElements => {
-        const newElements = [...prevElements, currentElement];
-        setUndoStack(prevStack => [...prevStack, prevElements]);
-        setRedoStack([]);
-        return newElements;
-      });
+      console.log("Sending element to server:", currentElement); // Debugging: Log element being sent
       ws.current?.send(JSON.stringify({ type: 'new_element', data: currentElement }));
+
+      // Push the current state of elements to undo stack BEFORE the new element is added
+      // This ensures that when undo is called, the state before the new element is restored.
+      setUndoStack(prevStack => [...prevStack, elements]);
+      setRedoStack([]); // Clear redo stack on new action
     }
     setIsDrawing(false);
     setCurrentElement(null);
     setStartPoint(null);
-  }, [isDrawing, currentElement, setElements, setUndoStack, setRedoStack]);
+  }, [isDrawing, currentElement, elements, setUndoStack, setRedoStack]);
 
   const undo = useCallback(() => {
     if (undoStack.length > 0) {
-      setElements(prevElements => {
-        setRedoStack(prevStack => [...prevStack, prevElements]);
-        const previousState = undoStack[undoStack.length - 1];
-        setUndoStack(prevStack => prevStack.slice(0, -1));
-        return previousState;
-      });
+      const previousElements = undoStack[undoStack.length - 1];
+      
+      // Find the ID of the element that was just added (and is now being undone)
+      // This element is present in the current 'elements' state but not in 'previousElements'
+      const elementToUndo = elements.find(el => 
+        !previousElements.some(prevEl => prevEl.id === el.id) // Check by ID for robust comparison
+      );
+
+      setRedoStack(prevStack => [...prevStack, elements]); // Push current state to redo stack
+      setUndoStack(prevStack => prevStack.slice(0, -1)); // Pop from undo stack
+      setElements(previousElements); // Revert to previous state
+
+      if (elementToUndo && elementToUndo.id !== undefined) {
+        ws.current?.send(JSON.stringify({ type: 'delete_element', data: { id: elementToUndo.id } }));
+      }
     }
-  }, [undoStack, setElements, setRedoStack, setUndoStack]);
+  }, [undoStack, elements, setElements, setRedoStack, setUndoStack]);
 
   const redo = useCallback(() => {
     if (redoStack.length > 0) {
@@ -399,7 +445,7 @@ const InfiniteCanvas: React.FC = () => {
         onMouseUp={endDrawingOrPanning}
         onMouseLeave={endDrawingOrPanning}
         onWheel={handleWheel}
-        style={{ display: 'block', background: '#f0f0f0', cursor: activeTool === 'pen' ? 'crosshair' : activeTool === 'eraser' ? 'cell' : 'grab' }}
+        style={{ display: 'block', background: '#f0f0f0', cursor: activeTool === 'pen' || activeTool === 'diamond' || activeTool === 'rectangle' || activeTool === 'circle' || activeTool === 'straight_line' ? 'crosshair' : activeTool === 'eraser' ? 'cell' : 'grab' }}
       />
     </div>
   );

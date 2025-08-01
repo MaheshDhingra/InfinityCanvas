@@ -124,6 +124,18 @@ const ToolPalette: React.FC<ToolPaletteProps> = ({
         >
           Circle
         </button>
+        <button
+          onClick={() => setActiveTool('diamond')}
+          style={{
+            padding: '8px 12px',
+            border: '1px solid #ccc',
+            borderRadius: '4px',
+            background: activeTool === 'diamond' ? '#e0e0e0' : 'white',
+            cursor: 'pointer',
+          }}
+        >
+          Diamond
+        </button>
       </div>
       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
         <button
