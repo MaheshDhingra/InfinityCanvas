@@ -21,6 +21,12 @@ try {
 
 // Function to save lines to file
 const saveLines = () => {
+  // Ensure the directory exists before writing the file
+  const dir = path.dirname(DATA_FILE);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
   fs.writeFile(DATA_FILE, JSON.stringify(lines, null, 2), 'utf8', (err) => {
     if (err) {
       console.error('Error saving data file:', err);
