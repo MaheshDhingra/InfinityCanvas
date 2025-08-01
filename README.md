@@ -1,16 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# InfinityCanvas
+
+InfinityCanvas is an interactive web application built with Next.js that provides an infinite canvas for creative expression and organization. It features a dynamic drawing area and a customizable tool palette, allowing users to create and manipulate content seamlessly.
+
+## Features
+
+*   **Infinite Canvas**: A boundless drawing surface that expands as you create, ensuring you never run out of space.
+*   **Tool Palette**: A versatile set of tools to interact with the canvas, enabling various drawing, editing, and organizational functionalities.
+*   **Responsive Design**: Built with Next.js, ensuring a smooth and performant experience across different devices.
 
 ## Getting Started
+
+To get InfinityCanvas up and running on your local machine, follow these steps:
+
+### Prerequisites
+
+Ensure you have [Bun](https://bun.sh/) installed, as it's used for package management and running the development server.
+
+### Installation
+
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/MaheshDhingra/InfinityCanvas.git
+    ```
+2.  Navigate into the project directory:
+    ```bash
+    cd InfinityCanvas
+    ```
+3.  Install the dependencies:
+    ```bash
+    bun install
+    ```
+
+### Running the Development Server
 
 First, run the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
 bun dev
 ```
 
@@ -24,8 +49,8 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 
 To learn more about Next.js, take a look at the following resources:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+-   [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+-   [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
