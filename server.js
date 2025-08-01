@@ -19,14 +19,20 @@ const pool = new Pool({
 async function initializeDb() {
   try {
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS lines (
+      CREATE TABLE IF NOT EXISTS drawing_elements (
         id SERIAL PRIMARY KEY,
+        type VARCHAR(20) NOT NULL,
         color VARCHAR(7) NOT NULL,
         "strokeWidth" INTEGER NOT NULL,
-        points JSONB NOT NULL
+        points JSONB, -- For lines
+        x FLOAT,      -- For shapes
+        y FLOAT,      -- For shapes
+        width FLOAT,  -- For rectangles
+        height FLOAT, -- For rectangles
+        radius FLOAT  -- For circles
       );
     `);
-    console.log('Database table "lines" ensured to exist.');
+    console.log('Database table "drawing_elements" ensured to exist.');
   } catch (err) {
     console.error('Error initializing database:', err);
   }
@@ -49,33 +55,54 @@ app.prepare().then(() => {
     handle(req, res, parsedUrl);
   });
 
-  // Create WebSocketServer without attaching to the HTTP server directly
-  const wss = new WebSocketServer({ noServer: true });
+  // Pass the http server directly to WebSocketServer
+  const wss = new WebSocketServer({ server });
 
   wss.on('connection', async ws => {
     console.log('Client connected to WebSocket');
 
     try {
-      const result = await pool.query('SELECT color, "strokeWidth", points FROM lines ORDER BY id ASC');
-      const existingLines = result.rows;
-      ws.send(JSON.stringify({ type: 'initial_lines', data: existingLines }));
-      console.log(`Sent ${existingLines.length} initial lines to new client.`);
+      const result = await pool.query('SELECT type, color, "strokeWidth", points, x, y, width, height, radius FROM drawing_elements ORDER BY id ASC');
+      const existingElements = result.rows.map(row => {
+        if (row.type === 'line') {
+          return { type: row.type, color: row.color, strokeWidth: row.strokeWidth, points: row.points };
+        } else if (row.type === 'rectangle') {
+          return { type: row.type, color: row.color, strokeWidth: row.strokeWidth, x: row.x, y: row.y, width: row.width, height: row.height };
+        } else if (row.type === 'circle') {
+          return { type: row.type, color: row.color, strokeWidth: row.strokeWidth, x: row.x, y: row.y, radius: row.radius };
+        }
+        return null;
+      }).filter(Boolean); // Filter out any nulls if type is unknown
+      ws.send(JSON.stringify({ type: 'initial_elements', data: existingElements }));
+      console.log(`Sent ${existingElements.length} initial elements to new client.`);
     } catch (err) {
-      console.error('Error fetching initial lines from DB:', err);
+      console.error('Error fetching initial elements from DB:', err);
     }
 
     ws.on('message', async message => {
       const parsedMessage = JSON.parse(message.toString());
-      if (parsedMessage.type === 'new_line') {
-        const newLine = parsedMessage.data;
+      if (parsedMessage.type === 'new_element') {
+        const newElement = parsedMessage.data;
         try {
-          await pool.query(
-            'INSERT INTO lines (color, "strokeWidth", points) VALUES ($1, $2, $3)',
-            [newLine.color, newLine.strokeWidth, JSON.stringify(newLine.points)]
-          );
-          console.log('New line saved to database.');
+          if (newElement.type === 'line') {
+            await pool.query(
+              'INSERT INTO drawing_elements (type, color, "strokeWidth", points) VALUES ($1, $2, $3, $4)',
+              [newElement.type, newElement.color, newElement.strokeWidth, JSON.stringify(newElement.points)]
+            );
+          } else if (newElement.type === 'rectangle') {
+            await pool.query(
+              'INSERT INTO drawing_elements (type, color, "strokeWidth", x, y, width, height) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+              [newElement.type, newElement.color, newElement.strokeWidth, newElement.x, newElement.y, newElement.width, newElement.height]
+            );
+          } else if (newElement.type === 'circle') {
+            await pool.query(
+              'INSERT INTO drawing_elements (type, color, "strokeWidth", x, y, radius) VALUES ($1, $2, $3, $4, $5, $6)',
+              [newElement.type, newElement.color, newElement.strokeWidth, newElement.x, newElement.y, newElement.radius]
+            );
+          }
+          console.log(`New ${newElement.type} saved to database.`);
         } catch (err) {
-          console.error('Error saving new line to DB:', err);
+          console.error(`Error saving new ${newElement.type} to DB:`, err);
         }
 
         wss.clients.forEach(client => {
@@ -95,17 +122,8 @@ app.prepare().then(() => {
     });
   });
 
-  server.on('upgrade', async function upgrade(request, socket, head) {
-    const { pathname } = parse(request.url);
-
-    if (pathname === '/api/socket') {
-      wss.handleUpgrade(request, socket, head, function done(ws) {
-        wss.emit('connection', ws, request);
-      });
-    } else {
-      socket.destroy();
-    }
-  });
+  // The 'upgrade' event is now handled internally by `new WebSocketServer({ server })`
+  // No need for a manual server.on('upgrade', ...) block here.
 
   server.listen(port, (err) => {
     if (err) throw err;
