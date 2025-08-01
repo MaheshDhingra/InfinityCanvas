@@ -87,6 +87,17 @@ const InfiniteCanvas: React.FC = () => {
     ctx.stroke();
   }, []);
 
+  const drawStraightLine = useCallback((ctx: CanvasRenderingContext2D, line: StraightLine) => {
+    ctx.strokeStyle = line.color;
+    ctx.lineWidth = line.strokeWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(line.start.x, line.start.y);
+    ctx.lineTo(line.end.x, line.end.y);
+    ctx.stroke();
+  }, []);
+
   const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -105,6 +116,8 @@ const InfiniteCanvas: React.FC = () => {
         drawRectangle(ctx, element);
       } else if (element.type === 'circle') {
         drawCircle(ctx, element);
+      } else if (element.type === 'straight_line') {
+        drawStraightLine(ctx, element);
       }
     });
 
@@ -115,10 +128,12 @@ const InfiniteCanvas: React.FC = () => {
         drawRectangle(ctx, currentElement);
       } else if (currentElement.type === 'circle') {
         drawCircle(ctx, currentElement);
+      } else if (currentElement.type === 'straight_line') {
+        drawStraightLine(ctx, currentElement);
       }
     }
     ctx.restore();
-  }, [elements, currentElement, scale, offset, drawLine, drawRectangle, drawCircle]);
+  }, [elements, currentElement, scale, offset, drawLine, drawRectangle, drawCircle, drawStraightLine]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -155,9 +170,9 @@ const InfiniteCanvas: React.FC = () => {
 
     ws.current.onmessage = event => {
       const message = JSON.parse(event.data);
-      if (message.type === 'initial_elements') { // Changed from initial_lines
+      if (message.type === 'initial_elements') {
         setElements(message.data);
-      } else if (message.type === 'new_element') { // Changed from new_line
+      } else if (message.type === 'new_element') {
         setElements(prevElements => [...prevElements, message.data]);
       }
     };
@@ -210,16 +225,16 @@ const InfiniteCanvas: React.FC = () => {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [setOffset]); // Added setOffset to dependency array
+  }, [setOffset]);
 
   useEffect(() => {
     const handleZoomKeyDown = (e: KeyboardEvent) => {
       const scaleAmount = 1.1;
       setScale(prevScale => {
         let newScale = prevScale;
-        if (e.key === '+' || e.key === '=') { // Zoom in with '+' or '='
+        if (e.key === 'q' || e.key === 'Q') { // Zoom in with 'Q'
           newScale *= scaleAmount;
-        } else if (e.key === '-' || e.key === '_') { // Zoom out with '-' or '_'
+        } else if (e.key === 'e' || e.key === 'E') { // Zoom out with 'E'
           newScale /= scaleAmount;
         }
         // Limit zoom
@@ -232,7 +247,7 @@ const InfiniteCanvas: React.FC = () => {
     return () => {
       window.removeEventListener('keydown', handleZoomKeyDown);
     };
-  }, []); // Empty dependency array means this runs once on mount and cleans up on unmount
+  }, [setScale]);
 
   const getTransformedPoint = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -255,6 +270,8 @@ const InfiniteCanvas: React.FC = () => {
         setCurrentElement({ type: 'rectangle', x: point.x, y: point.y, width: 0, height: 0, color: currentColor, strokeWidth: currentStrokeWidth });
       } else if (activeTool === 'circle') {
         setCurrentElement({ type: 'circle', x: point.x, y: point.y, radius: 0, color: currentColor, strokeWidth: currentStrokeWidth });
+      } else if (activeTool === 'straight_line') {
+        setCurrentElement({ type: 'straight_line', start: point, end: point, color: currentColor, strokeWidth: currentStrokeWidth });
       }
     } else if (e.button === 1) { // Middle click for panning
       setLastMousePos({ x: e.clientX, y: e.clientY });
@@ -262,31 +279,7 @@ const InfiniteCanvas: React.FC = () => {
   }, [getTransformedPoint, currentColor, currentStrokeWidth, activeTool]);
 
   const drawOrPan = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current || !isDrawing) return; // Removed !startPoint from here
-
-    const currentPoint = getTransformedPoint(e.clientX, e.clientY);
-
-    if (activeTool === 'pen' || activeTool === 'eraser') {
-      if (currentElement && currentElement.type === 'line') {
-        const updatedLine = { ...currentElement, points: [...currentElement.points, currentPoint] };
-        setCurrentElement(updatedLine);
-      }
-    } else if (activeTool === 'rectangle' && startPoint) { // Added startPoint check here
-      const width = currentPoint.x - startPoint.x;
-      const height = currentPoint.y - startPoint.y;
-      setCurrentElement({ type: 'rectangle', x: startPoint.x, y: startPoint.y, width, height, color: currentColor, strokeWidth: currentStrokeWidth });
-    } else if (activeTool === 'circle' && startPoint) { // Added startPoint check here
-      const dx = currentPoint.x - startPoint.x;
-      const dy = currentPoint.y - startPoint.y;
-      const radius = Math.sqrt(dx * dx + dy * dy);
-      setCurrentElement({ type: 'circle', x: startPoint.x, y: startPoint.y, radius, color: currentColor, strokeWidth: currentStrokeWidth });
-    } else if (activeTool === 'straight_line' && startPoint) { // Added startPoint check here
-      if (currentElement && currentElement.type === 'straight_line') {
-        setCurrentElement({ ...currentElement, end: currentPoint });
-      }
-    }
-    redrawCanvas();
-  }, [isDrawing, currentElement, getTransformedPoint, startPoint, activeTool, currentColor, currentStrokeWidth, redrawCanvas]);
+    if (!canvasRef.current || !isDrawing) return;
 
     const currentPoint = getTransformedPoint(e.clientX, e.clientY);
 
@@ -296,15 +289,18 @@ const InfiniteCanvas: React.FC = () => {
         setCurrentElement(updatedLine);
       }
     } else if (activeTool === 'rectangle') {
+      if (!startPoint) return;
       const width = currentPoint.x - startPoint.x;
       const height = currentPoint.y - startPoint.y;
       setCurrentElement({ type: 'rectangle', x: startPoint.x, y: startPoint.y, width, height, color: currentColor, strokeWidth: currentStrokeWidth });
     } else if (activeTool === 'circle') {
+      if (!startPoint) return;
       const dx = currentPoint.x - startPoint.x;
       const dy = currentPoint.y - startPoint.y;
       const radius = Math.sqrt(dx * dx + dy * dy);
       setCurrentElement({ type: 'circle', x: startPoint.x, y: startPoint.y, radius, color: currentColor, strokeWidth: currentStrokeWidth });
     } else if (activeTool === 'straight_line') {
+      if (!startPoint) return;
       if (currentElement && currentElement.type === 'straight_line') {
         setCurrentElement({ ...currentElement, end: currentPoint });
       }
@@ -316,8 +312,8 @@ const InfiniteCanvas: React.FC = () => {
     if (isDrawing && currentElement) {
       setElements(prevElements => {
         const newElements = [...prevElements, currentElement];
-        setUndoStack(prevStack => [...prevStack, prevElements]); // Save current state to undo stack
-        setRedoStack([]); // Clear redo stack on new action
+        setUndoStack(prevStack => [...prevStack, prevElements]);
+        setRedoStack([]);
         return newElements;
       });
       ws.current?.send(JSON.stringify({ type: 'new_element', data: currentElement }));
@@ -325,29 +321,29 @@ const InfiniteCanvas: React.FC = () => {
     setIsDrawing(false);
     setCurrentElement(null);
     setStartPoint(null);
-  }, [isDrawing, currentElement]);
+  }, [isDrawing, currentElement, setElements, setUndoStack, setRedoStack]);
 
   const undo = useCallback(() => {
     if (undoStack.length > 0) {
       setElements(prevElements => {
-        setRedoStack(prevStack => [...prevStack, prevElements]); // Save current state to redo stack
+        setRedoStack(prevStack => [...prevStack, prevElements]);
         const previousState = undoStack[undoStack.length - 1];
-        setUndoStack(prevStack => prevStack.slice(0, -1)); // Remove last state from undo stack
+        setUndoStack(prevStack => prevStack.slice(0, -1));
         return previousState;
       });
     }
-  }, [undoStack]);
+  }, [undoStack, setElements, setRedoStack, setUndoStack]);
 
   const redo = useCallback(() => {
     if (redoStack.length > 0) {
       setElements(prevElements => {
-        setUndoStack(prevStack => [...prevStack, prevElements]); // Save current state to undo stack
+        setUndoStack(prevStack => [...prevStack, prevElements]);
         const nextState = redoStack[redoStack.length - 1];
-        setRedoStack(prevStack => prevStack.slice(0, -1)); // Remove last state from redo stack
+        setRedoStack(prevStack => prevStack.slice(0, -1));
         return nextState;
       });
     }
-  }, [redoStack]);
+  }, [redoStack, setElements, setUndoStack, setRedoStack]);
 
   const handleWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
@@ -382,7 +378,7 @@ const InfiniteCanvas: React.FC = () => {
     }));
     setScale(newScale);
     redrawCanvas();
-  }, [scale, redrawCanvas]);
+  }, [scale, redrawCanvas, setOffset, setScale]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
