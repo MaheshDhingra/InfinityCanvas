@@ -21,6 +21,8 @@ const InfiniteCanvas: React.FC = () => {
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const [currentColor, setCurrentColor] = useState('#000000'); // Default color
+  const [currentStrokeWidth, setCurrentStrokeWidth] = useState(2); // Default stroke width
   const ws = useRef<WebSocket | null>(null);
 
   const draw = useCallback((ctx: CanvasRenderingContext2D, line: Line) => {
@@ -80,15 +82,20 @@ const InfiniteCanvas: React.FC = () => {
 
   useEffect(() => {
     // Initialize WebSocket connection
-    ws.current = new WebSocket(`ws://${window.location.hostname}:3000/api/socket`);
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws.current = new WebSocket(`${protocol}//${window.location.hostname}:3000/api/socket`);
 
     ws.current.onopen = () => {
       console.log('WebSocket connected');
     };
 
     ws.current.onmessage = event => {
-      const receivedLine: Line = JSON.parse(event.data);
-      setLines(prevLines => [...prevLines, receivedLine]);
+      const message = JSON.parse(event.data);
+      if (message.type === 'initial_lines') {
+        setLines(message.data);
+      } else if (message.type === 'new_line') {
+        setLines(prevLines => [...prevLines, message.data]);
+      }
     };
 
     ws.current.onclose = () => {
@@ -117,11 +124,11 @@ const InfiniteCanvas: React.FC = () => {
     if (e.button === 0) { // Left click for drawing
       setIsDrawing(true);
       const point = getTransformedPoint(e.clientX, e.clientY);
-      setCurrentLine({ points: [point], color: 'black', strokeWidth: 2 });
+      setCurrentLine({ points: [point], color: currentColor, strokeWidth: currentStrokeWidth });
     } else if (e.button === 1) { // Middle click for panning
       setLastMousePos({ x: e.clientX, y: e.clientY });
     }
-  }, [getTransformedPoint]);
+  }, [getTransformedPoint, currentColor, currentStrokeWidth]);
 
   const drawOrPan = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!canvasRef.current) return;
@@ -143,7 +150,7 @@ const InfiniteCanvas: React.FC = () => {
   const endDrawingOrPanning = useCallback(() => {
     if (isDrawing && currentLine) {
       setLines(prevLines => [...prevLines, currentLine]);
-      ws.current?.send(JSON.stringify(currentLine));
+      ws.current?.send(JSON.stringify({ type: 'new_line', data: currentLine }));
     }
     setIsDrawing(false);
     setCurrentLine(null);
@@ -185,15 +192,50 @@ const InfiniteCanvas: React.FC = () => {
   }, [scale, redrawCanvas]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      onMouseDown={startDrawing}
-      onMouseMove={drawOrPan}
-      onMouseUp={endDrawingOrPanning}
-      onMouseLeave={endDrawingOrPanning}
-      onWheel={handleWheel}
-      style={{ display: 'block', background: '#f0f0f0', cursor: isDrawing ? 'crosshair' : 'grab' }}
-    />
+    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <div style={{
+        position: 'absolute',
+        top: 10,
+        left: 10,
+        background: 'white',
+        padding: '10px',
+        borderRadius: '5px',
+        boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+        zIndex: 10,
+        display: 'flex',
+        gap: '10px',
+        alignItems: 'center'
+      }}>
+        <label htmlFor="colorPicker">Color:</label>
+        <input
+          type="color"
+          id="colorPicker"
+          value={currentColor}
+          onChange={(e) => setCurrentColor(e.target.value)}
+          style={{ width: '40px', height: '25px', border: 'none', padding: 0 }}
+        />
+        <label htmlFor="strokeWidth">Stroke:</label>
+        <input
+          type="range"
+          id="strokeWidth"
+          min="1"
+          max="20"
+          value={currentStrokeWidth}
+          onChange={(e) => setCurrentStrokeWidth(parseInt(e.target.value))}
+          style={{ width: '100px' }}
+        />
+        <span>{currentStrokeWidth}px</span>
+      </div>
+      <canvas
+        ref={canvasRef}
+        onMouseDown={startDrawing}
+        onMouseMove={drawOrPan}
+        onMouseUp={endDrawingOrPanning}
+        onMouseLeave={endDrawingOrPanning}
+        onWheel={handleWheel}
+        style={{ display: 'block', background: '#f0f0f0', cursor: isDrawing ? 'crosshair' : 'grab' }}
+      />
+    </div>
   );
 };
 
